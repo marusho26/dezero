@@ -13,7 +13,9 @@ class Function:
         x = input.data
         y = self.forward(x) # foward関数は、変化させたい＆その関数の呼び出しはクラス内で行われる
         output = Variable(y)
+        output.set_creator(self)
         self.input = input
+        self.output = output
         return output
     
     def forward(self, x):
