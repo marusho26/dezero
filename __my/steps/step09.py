@@ -64,3 +64,11 @@ def as_array(x):
     if np.isscalar(x):
         return np.array(x)
     return x
+
+def square(x):
+    f = Square()
+    return f(x)
+
+def exp(x):
+    f = Exp()
+    return f(x)
