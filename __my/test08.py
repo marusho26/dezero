@@ -1,4 +1,4 @@
-import __my.steps.check_step08 as s
+import __my.steps.step08 as s
 import numpy as np
 
 def square(x):

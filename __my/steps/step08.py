@@ -10,13 +10,16 @@ class Variable:
 
     def backward(self):
         funcs = [self.creator]
+        # print('funcs_1:',funcs)
         while funcs:
+            # print('funcs_2:',funcs)
             f = funcs.pop()
             x, y = f.input, f.output
             x.grad = f.backward(y.grad)
 
             if x.creator is not None:
                 funcs.append(x.creator)
+                # print('funcs_3',funcs)
 
 class Function:
     def __call__(self, input):

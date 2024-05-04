@@ -8,14 +8,26 @@ class Variable:
         self.data = data
         self.grad = None
         self.creator = None
+        self.generation = 0
     def set_creator(self, func):
         self.creator = func
+        self.generation = func.generation + 1
 
     def backward(self):
         if self.grad is None:
             self.grad = np.ones_like(self.data)
 
-        funcs = [self.creator]
+        funcs = []
+        seen_set = set()
+
+        def add_func(f):
+            if f not in seen_set:
+                funcs.append(f)
+                seen_set.add(f)
+                funcs.sort(key=lambda x: x.generation)
+
+        add_func(self.creator)
+
         while funcs:
             f = funcs.pop()
             gys = [output.grad for output in f.outputs]
@@ -24,10 +36,16 @@ class Variable:
                 gxs = (gxs,)
 
             for x, gx in zip(f.inputs, gxs):
-                x.grad = gx
+                if x.grad is None:
+                    x.grad = gx
+                else:
+                    x.grad = x.grad + gx
 
                 if x.creator is not None:
-                    funcs.append(x.creator)
+                    add_func(x.creator)
+
+    def cleargrad(self):
+        self.grad = None
 
 class Function:
     def __call__(self, *inputs):
@@ -37,6 +55,7 @@ class Function:
             ys = (ys,)
         outputs = [Variable(as_array(y)) for y in ys]
 
+        self.generation = max([x.generation for x in inputs])
         for output in outputs:
             output.set_creator(self)
         self.inputs = inputs
@@ -93,11 +112,13 @@ def exp(x):
 def add(x0, x1):
     return Add()(x0, x1)
 
-x = Variable(np.array(2.0))
-y = Variable(np.array(3.0))
 
-z = add(square(x), square(y))
-z.backward()
-print(z.data)
+
+
+x = Variable(np.array(2.0))
+a = square(x)
+y = add(square(a), square(a))
+y.backward()
+
+print(y.data)
 print(x.grad)
-print(y.grad)
