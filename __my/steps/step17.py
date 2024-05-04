@@ -1,4 +1,5 @@
 import numpy as np
+import weakref
 
 class Variable:
     def __init__(self, data):
@@ -8,26 +9,45 @@ class Variable:
         self.data = data
         self.grad = None
         self.creator = None
+        self.generation = 0
     def set_creator(self, func):
         self.creator = func
+        self.generation = func.generation + 1
 
     def backward(self):
         if self.grad is None:
             self.grad = np.ones_like(self.data)
 
-        funcs = [self.creator]
+        funcs = []
+        seen_set = set()
+
+        def add_func(f):
+            if f not in seen_set:
+                funcs.append(f)
+                seen_set.add(f)
+                funcs.sort(key=lambda x: x.generation)
+
+        add_func(self.creator)
+
         while funcs:
             f = funcs.pop()
-            gys = [output.grad for output in f.outputs]
+            # gys = [output.grad for output in f.outputs]
+            gys = [output().grad for output in f.outputs]
             gxs = f.backward(*gys)
             if not isinstance(gxs, tuple):
                 gxs = (gxs,)
 
             for x, gx in zip(f.inputs, gxs):
-                x.grad = gx
+                if x.grad is None:
+                    x.grad = gx
+                else:
+                    x.grad = x.grad + gx
 
                 if x.creator is not None:
-                    funcs.append(x.creator)
+                    add_func(x.creator)
+
+    def cleargrad(self):
+        self.grad = None
 
 class Function:
     def __call__(self, *inputs):
@@ -37,10 +57,12 @@ class Function:
             ys = (ys,)
         outputs = [Variable(as_array(y)) for y in ys]
 
+        self.generation = max([x.generation for x in inputs])
         for output in outputs:
             output.set_creator(self)
         self.inputs = inputs
-        self.outputs = outputs
+        # self.outputs = outputs
+        self.outputs = [weakref.ref(output) for output in outputs]
         return outputs if len(outputs) > 1 else outputs[0]
     
     def forward(self, xs):
@@ -93,11 +115,10 @@ def exp(x):
 def add(x0, x1):
     return Add()(x0, x1)
 
-x = Variable(np.array(2.0))
-y = Variable(np.array(3.0))
 
-z = add(square(x), square(y))
-z.backward()
-print(z.data)
-print(x.grad)
-print(y.grad)
+
+
+for i in range(10):
+    x = Variable(np.random.randn(10000))
+    y = square(square(square(x)))
+    print(y.data)
