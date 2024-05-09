@@ -1,9 +1,10 @@
 import numpy as np
 import weakref
 import contextlib
+import dezero
 
 class Config:
-    enable_backdrop = True
+    enable_backprop = True
 
 class Variable:
     __array_priority__ = 200
@@ -21,9 +22,8 @@ class Variable:
         self.creator = func
         self.generation = func.generation + 1
 
-    def backward(self, retain_grad=False):
+    def backward(self, retain_grad=False, create_graph=False):
         if self.grad is None:
-            # self.grad = np.ones_like(self.data)
             self.grad = Variable(np.ones_like(self.data))
 
         funcs = []
@@ -40,18 +40,20 @@ class Variable:
         while funcs:
             f = funcs.pop()
             gys = [output().grad for output in f.outputs]
-            gxs = f.backward(*gys)
-            if not isinstance(gxs, tuple):
-                gxs = (gxs,)
 
-            for x, gx in zip(f.inputs, gxs):
-                if x.grad is None:
-                    x.grad = gx
-                else:
-                    x.grad = x.grad + gx
+            with using_config('enable_backprop', create_graph):
+                gxs = f.backward(*gys)
+                if not isinstance(gxs, tuple):
+                    gxs = (gxs,)
 
-                if x.creator is not None:
-                    add_func(x.creator)
+                for x, gx in zip(f.inputs, gxs):
+                    if x.grad is None:
+                        x.grad = gx
+                    else:
+                        x.grad = x.grad + gx
+
+                    if x.creator is not None:
+                        add_func(x.creator)
             if not retain_grad:
                 for y in f.outputs:
                     y().grad = None
@@ -83,6 +85,21 @@ class Variable:
             return 'variable(None)'
         p = str(self.data).replace('\n', '\n' + ' ' * 9)
         return 'variable(' + p + ')'
+    
+    def reshape(self, *shape):
+        if len(shape) == 1 and isinstance(shape[0], (tuple, list)):
+            shape = shape[0]
+        return dezero.functions.reshape(self, shape)
+    
+    def transpose(self):
+        return dezero.functions.transpose(self)
+    
+    @property
+    def T(self):
+        return dezero.functions.transpose(self)
+    
+    def sum(self, axis=None, keepdims=False):
+        return dezero.functions.sum(self, axis, keepdims)
 
 class Function:
     def __call__(self, *inputs):
@@ -93,7 +110,7 @@ class Function:
             ys = (ys,)
         outputs = [Variable(as_array(y)) for y in ys]
 
-        if Config.enable_backdrop:
+        if Config.enable_backprop:
             self.generation = max([x.generation for x in inputs])
             for output in outputs:
                 output.set_creator(self)
@@ -157,7 +174,7 @@ class Pow(Function):
         return y
     
     def backward(self, gy):
-        x = self.inputs
+        x, = self.inputs
         c = self.c
         gx = c * x ** (c - 1) * gy
         return gx
@@ -172,7 +189,7 @@ def using_config(name, value):
         setattr(Config, name, old_value)
 
 def no_grad():
-    return using_config('enable_backdrop', False)
+    return using_config('enable_backprop', False)
     
 def as_array(x):
     if np.isscalar(x):
